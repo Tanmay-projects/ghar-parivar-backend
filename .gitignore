@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+ghar_parivar.db
+.env
+.venv/
