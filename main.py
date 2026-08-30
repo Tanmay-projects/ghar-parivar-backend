@@ -4,37 +4,33 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-
 APP_NAME="Ghar Parivar API"; DATABASE=os.getenv("DATABASE_PATH","ghar_parivar.db"); FRONTEND_ORIGIN=os.getenv("FRONTEND_ORIGIN","https://tanmay-projects.github.io"); SESSION_HOURS=int(os.getenv("SESSION_HOURS","24"))
-app=FastAPI(title=APP_NAME,version="2.1.0")
+app=FastAPI(title=APP_NAME,version="2.2.0")
 app.add_middleware(CORSMiddleware,allow_origins=list({FRONTEND_ORIGIN.rstrip("/"),"https://tanmay-projects.github.io","http://localhost:5500","http://127.0.0.1:5500"}),allow_credentials=True,allow_methods=["GET","POST","PATCH","DELETE","OPTIONS"],allow_headers=["Content-Type"])
-def now(): return datetime.now(timezone.utc)
+def now():return datetime.now(timezone.utc)
 def db():
  x=sqlite3.connect(DATABASE);x.row_factory=sqlite3.Row;x.execute("PRAGMA foreign_keys=ON");return x
 def init():
- x=db();x.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'family',family_id TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INTEGER NOT NULL,expires_at TEXT NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);CREATE TABLE IF NOT EXISTS private_profiles(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER UNIQUE NOT NULL,mobile TEXT,email TEXT,address TEXT,birthday TEXT,education TEXT,profession TEXT,notes TEXT,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);CREATE TABLE IF NOT EXISTS family_members(id INTEGER PRIMARY KEY AUTOINCREMENT,family_id TEXT NOT NULL,name TEXT NOT NULL,designation TEXT,relation TEXT,generation TEXT DEFAULT 'child',parent_id INTEGER,spouse_id INTEGER,phone TEXT,email TEXT,birthday TEXT,address TEXT,education TEXT,profession TEXT,biography TEXT,achievements TEXT,memories TEXT,avatar TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);CREATE INDEX IF NOT EXISTS idx_users_family ON users(family_id);CREATE INDEX IF NOT EXISTS idx_members_family ON family_members(family_id);CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);""")
- cols={r[1] for r in x.execute("PRAGMA table_info(family_members)")};
+ x=db();x.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'family',family_id TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INTEGER NOT NULL,expires_at TEXT NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);CREATE TABLE IF NOT EXISTS private_profiles(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER UNIQUE NOT NULL,mobile TEXT,email TEXT,address TEXT,birthday TEXT,education TEXT,profession TEXT,notes TEXT,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);CREATE TABLE IF NOT EXISTS family_members(id INTEGER PRIMARY KEY AUTOINCREMENT,family_id TEXT NOT NULL,name TEXT NOT NULL,designation TEXT,relation TEXT,generation TEXT DEFAULT 'child',parent_id INTEGER,spouse_id INTEGER,phone TEXT,email TEXT,birthday TEXT,address TEXT,education TEXT,profession TEXT,biography TEXT,achievements TEXT,memories TEXT,avatar TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);""");cols={r[1] for r in x.execute("PRAGMA table_info(family_members)")};
  for n,t in (("generation","TEXT DEFAULT 'child'"),("parent_id","INTEGER"),("spouse_id","INTEGER")):
   if n not in cols:x.execute(f"ALTER TABLE family_members ADD COLUMN {n} {t}")
  x.commit();x.close()
 def hp(p):
  s=secrets.token_bytes(16);return s.hex()+":"+hashlib.pbkdf2_hmac("sha256",p.encode(),s,200000).hex()
 def vp(p,v):
- try:
-  s,d=v.split(":",1);return secrets.compare_digest(hashlib.pbkdf2_hmac("sha256",p.encode(),bytes.fromhex(s),200000).hex(),d)
+ try:s,d=v.split(":",1);return secrets.compare_digest(hashlib.pbkdf2_hmac("sha256",p.encode(),bytes.fromhex(s),200000).hex(),d)
  except:return False
 def seed_admin():
  u,p=os.getenv("ADMIN_USERNAME"),os.getenv("ADMIN_PASSWORD")
  if not u or not p or len(p)<8:return
- x=db()
+ x=db();
  if not x.execute("SELECT id FROM users WHERE username=?",(u,)).fetchone():x.execute("INSERT INTO users(username,password_hash,role,created_at) VALUES(?,?,?,?)",(u,hp(p),"admin",now().isoformat()));x.commit()
  x.close()
 init();seed_admin()
-class Login(BaseModel): username:str=Field(min_length=1,max_length=80);password:str=Field(min_length=1,max_length=200)
-class NewUser(BaseModel): username:str=Field(min_length=3,max_length=80);password:str=Field(min_length=8,max_length=200);family_id:str=Field(min_length=1,max_length=80)
-class Private(BaseModel): user_id:int;mobile:Optional[str]=None;email:Optional[str]=None;address:Optional[str]=None;birthday:Optional[str]=None;education:Optional[str]=None;profession:Optional[str]=None;notes:Optional[str]=None
-class Member(BaseModel):
- family_id:str=Field(min_length=1,max_length=80);name:str=Field(min_length=1,max_length=150);designation:Optional[str]=None;relation:Optional[str]=None;generation:Optional[str]="child";parent_id:Optional[int]=None;spouse_id:Optional[int]=None;phone:Optional[str]=None;email:Optional[str]=None;birthday:Optional[str]=None;address:Optional[str]=None;education:Optional[str]=None;profession:Optional[str]=None;biography:Optional[str]=None;achievements:Optional[str]=None;memories:Optional[str]=None;avatar:Optional[str]=None
+class Login(BaseModel):username:str=Field(min_length=1,max_length=80);password:str=Field(min_length=1,max_length=200)
+class NewUser(BaseModel):username:str=Field(min_length=3,max_length=80);password:str=Field(min_length=8,max_length=200);family_id:str=Field(min_length=1,max_length=80)
+class Private(BaseModel):user_id:int;mobile:Optional[str]=None;email:Optional[str]=None;address:Optional[str]=None;birthday:Optional[str]=None;education:Optional[str]=None;profession:Optional[str]=None;notes:Optional[str]=None
+class Member(BaseModel):family_id:str=Field(min_length=1,max_length=80);name:str=Field(min_length=1,max_length=150);designation:Optional[str]=None;relation:Optional[str]=None;generation:Optional[str]="child";parent_id:Optional[int]=None;spouse_id:Optional[int]=None;phone:Optional[str]=None;email:Optional[str]=None;birthday:Optional[str]=None;address:Optional[str]=None;education:Optional[str]=None;profession:Optional[str]=None;biography:Optional[str]=None;achievements:Optional[str]=None;memories:Optional[str]=None;avatar:Optional[str]=None
 def user(req:Request):
  t=req.cookies.get("gp_session");
  if not t:raise HTTPException(401,"Not logged in")
@@ -45,7 +41,7 @@ def admin(u=Depends(user)):
  if u["role"]!="admin":raise HTTPException(403,"Administrator access required")
  return u
 @app.get("/")
-def root():return {"name":"Ghar Parivar","status":"online","version":"2.1.0"}
+def root():return {"name":"Ghar Parivar","status":"online","version":"2.2.0"}
 @app.get("/health")
 def health():return {"status":"ok","database":"connected"}
 @app.post("/login")
@@ -53,7 +49,7 @@ def login(d:Login,response:Response):
  x=db();u=x.execute("SELECT * FROM users WHERE username=?",(d.username.strip(),)).fetchone()
  if not u or not vp(d.password,u["password_hash"]):x.close();raise HTTPException(401,"Invalid username or password")
  if not u["active"]:x.close();raise HTTPException(403,"This account is disabled")
- t=secrets.token_urlsafe(48);x.execute("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)",(t,u["id"],(now()+timedelta(hours=SESSION_HOURS)).isoformat()));x.execute("DELETE FROM sessions WHERE expires_at<=?",(now().isoformat(),));x.commit();x.close();response.set_cookie("gp_session",t,max_age=SESSION_HOURS*3600,httponly=True,secure=True,samesite="none",path="/");return {"message":"Login successful","role":u["role"],"family_id":u["family_id"]}
+ t=secrets.token_urlsafe(48);x.execute("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)",(t,u["id"],(now()+timedelta(hours=SESSION_HOURS)).isoformat()));x.commit();x.close();response.set_cookie("gp_session",t,max_age=SESSION_HOURS*3600,httponly=True,secure=True,samesite="none",path="/");return {"message":"Login successful","role":u["role"],"family_id":u["family_id"]}
 @app.get("/me")
 def me(u=Depends(user)):return {"id":u["id"],"username":u["username"],"role":u["role"],"family_id":u["family_id"]}
 @app.post("/logout")
@@ -61,6 +57,9 @@ def logout(req:Request,res:Response):
  t=req.cookies.get("gp_session");x=db();
  if t:x.execute("DELETE FROM sessions WHERE token=?",(t,));x.commit()
  x.close();res.delete_cookie("gp_session",path="/");return {"message":"Logged out"}
+@app.get("/families")
+def families():
+ x=db();r=x.execute("SELECT family_id,COUNT(*) AS member_count FROM family_members WHERE active=1 AND family_id IS NOT NULL GROUP BY family_id ORDER BY family_id").fetchall();x.close();return [dict(a) for a in r]
 @app.get("/families/{family_id}")
 def public_family(family_id:str):
  x=db();r=x.execute("SELECT id,family_id,name,designation,relation,generation,parent_id,spouse_id,avatar,biography,achievements,memories FROM family_members WHERE family_id=? AND active=1 ORDER BY id",(family_id,)).fetchall();x.close();return {"family_id":family_id,"members":[dict(a) for a in r]}
