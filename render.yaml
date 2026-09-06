@@ -4,3 +4,10 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/ghar_parivar.db
+    disk:
+      name: ghar-parivar-data
+      mountPath: /var/data
+      sizeGB: 1
