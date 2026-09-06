@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 APP_NAME="Ghar Parivar API"; DATABASE=os.getenv("DATABASE_PATH","ghar_parivar.db"); FRONTEND_ORIGIN=os.getenv("FRONTEND_ORIGIN","https://tanmay-projects.github.io"); SESSION_HOURS=int(os.getenv("SESSION_HOURS","24"))
-app=FastAPI(title=APP_NAME,version="3.0.0"); app.add_middleware(CORSMiddleware,allow_origins=list({FRONTEND_ORIGIN.rstrip("/"),"https://tanmay-projects.github.io","http://localhost:5500","http://127.0.0.1:5500"}),allow_credentials=True,allow_methods=["GET","POST","PATCH","DELETE","OPTIONS"],allow_headers=["Content-Type"])
+app=FastAPI(title=APP_NAME,version="3.1.0"); app.add_middleware(CORSMiddleware,allow_origins=list({FRONTEND_ORIGIN.rstrip("/"),"https://tanmay-projects.github.io","http://localhost:5500","http://127.0.0.1:5500"}),allow_credentials=True,allow_methods=["GET","POST","PATCH","DELETE","OPTIONS"],allow_headers=["Content-Type"])
 def now(): return datetime.now(timezone.utc)
 def db():
  x=sqlite3.connect(DATABASE); x.row_factory=sqlite3.Row; x.execute("PRAGMA foreign_keys=ON"); return x
@@ -24,7 +24,8 @@ def init():
  CREATE TABLE IF NOT EXISTS family_members(id INTEGER PRIMARY KEY AUTOINCREMENT,family_id TEXT NOT NULL,name TEXT NOT NULL,designation TEXT,relation TEXT,generation TEXT DEFAULT 'child',parent_id INTEGER,spouse_id INTEGER,phone TEXT,email TEXT,birthday TEXT,address TEXT,education TEXT,profession TEXT,biography TEXT,achievements TEXT,memories TEXT,avatar TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,description TEXT,date TEXT,location TEXT,photo TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS site_media(id INTEGER PRIMARY KEY AUTOINCREMENT,slot TEXT NOT NULL,image_data TEXT NOT NULL,caption TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
- """); x.execute("INSERT OR IGNORE INTO families(id,name,description,icon,created_at) VALUES('dawar','डावर परिवार','डावर परिवार की पीढ़ियां और रिश्ते।','👨‍👩‍👧‍👦',?)",(now().isoformat(),)); x.commit(); x.close()
+ CREATE TABLE IF NOT EXISTS event_photos(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL,image_data TEXT NOT NULL,caption TEXT,created_at TEXT NOT NULL,FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE);
+ """); x.execute("INSERT OR IGNORE INTO families(id,name,description,icon,created_at) VALUES('dawar','डावर परिवार','डावर परिवार की पीढ़ियां और रिश्ते।','👨‍👩‍👧‍👦',?)",(now().isoformat(),)); x.execute("INSERT OR IGNORE INTO families(id,name,description,icon,created_at) VALUES('dindod','डिंडोर परिवार','डिंडोर परिवार की पीढ़ियां और रिश्ते।','👨‍👩‍👧‍👦',?)",(now().isoformat(),)); x.commit(); x.close()
 def seed_admin():
  u=os.getenv("ADMIN_USERNAME","admin").strip(); p=os.getenv("ADMIN_PASSWORD")
  if not p or len(p)<8:return
@@ -41,6 +42,7 @@ class Member(BaseModel):
  family_id:str=Field(min_length=1,max_length=80); name:str=Field(min_length=1,max_length=150); designation:Optional[str]=None; relation:Optional[str]=None; generation:Optional[str]='child'; parent_id:Optional[int]=None; spouse_id:Optional[int]=None; phone:Optional[str]=None; email:Optional[str]=None; birthday:Optional[str]=None; address:Optional[str]=None; education:Optional[str]=None; profession:Optional[str]=None; biography:Optional[str]=None; achievements:Optional[str]=None; memories:Optional[str]=None; avatar:Optional[str]=None
 class Event(BaseModel): title:str=Field(min_length=1,max_length=180); description:Optional[str]=None; date:Optional[str]=None; location:Optional[str]=None; photo:Optional[str]=None; active:bool=True
 class Media(BaseModel): slot:str=Field(min_length=1,max_length=40); image_data:str=Field(min_length=20); caption:Optional[str]=None; active:bool=True
+class EventPhoto(BaseModel): image_data:str=Field(min_length=20); caption:Optional[str]=None
 def user(req:Request):
  t=req.cookies.get('gp_session');
  if not t:raise HTTPException(401,'Not logged in')
@@ -51,7 +53,7 @@ def admin(u=Depends(user)):
  if u['role']!='admin':raise HTTPException(403,'Administrator access required')
  return u
 @app.get('/')
-def root():return {'name':APP_NAME,'status':'online','version':'3.0.0'}
+def root():return {'name':APP_NAME,'status':'online','version':'3.1.0'}
 @app.get('/health')
 def health():return {'status':'ok','database':'connected'}
 @app.post('/login')
@@ -76,6 +78,9 @@ def public_family(family_id:str):
 @app.get('/events')
 def public_events():
  x=db();r=x.execute('SELECT * FROM events WHERE active=1 ORDER BY date DESC,id DESC').fetchall();x.close();return [dict(a) for a in r]
+@app.get('/events/{eid}/photos')
+def public_event_photos(eid:int):
+ x=db();r=x.execute('SELECT id,image_data,caption FROM event_photos WHERE event_id=? ORDER BY id',(eid,)).fetchall();x.close();return [dict(a) for a in r]
 @app.get('/media')
 def public_media():
  x=db();r=x.execute('SELECT id,slot,image_data,caption FROM site_media WHERE active=1 ORDER BY id DESC').fetchall();x.close();return [dict(a) for a in r]
@@ -125,6 +130,20 @@ def delete_event(eid:int,u=Depends(admin)):
  x=db();r=x.execute('DELETE FROM events WHERE id=?',(eid,));x.commit();x.close();
  if not r.rowcount:raise HTTPException(404,'Event not found')
  return {'message':'Event deleted'}
+@app.post('/admin/events/{eid}/photos')
+def add_event_photo(eid:int,d:EventPhoto,u=Depends(admin)):
+ if not d.image_data.startswith('data:image/'):raise HTTPException(400,'Photo must be an image data URL')
+ x=db();e=x.execute('SELECT id FROM events WHERE id=?',(eid,)).fetchone()
+ if not e:x.close();raise HTTPException(404,'Event not found')
+ c=x.execute('INSERT INTO event_photos(event_id,image_data,caption,created_at) VALUES(?,?,?,?)',(eid,d.image_data,d.caption,now().isoformat()));x.commit();x.close();return {'message':'Event photo uploaded','photo_id':c.lastrowid}
+@app.get('/admin/events/{eid}/photos')
+def admin_event_photos(eid:int,u=Depends(admin)):
+ x=db();r=x.execute('SELECT * FROM event_photos WHERE event_id=? ORDER BY id',(eid,)).fetchall();x.close();return [dict(a) for a in r]
+@app.delete('/admin/event-photos/{pid}')
+def delete_event_photo(pid:int,u=Depends(admin)):
+ x=db();r=x.execute('DELETE FROM event_photos WHERE id=?',(pid,));x.commit();x.close();
+ if not r.rowcount:raise HTTPException(404,'Event photo not found')
+ return {'message':'Event photo deleted'}
 @app.post('/admin/users')
 def create_user(d:NewUser,u=Depends(admin)):
  x=db()
@@ -165,14 +184,15 @@ def admin_media(u=Depends(admin)):
 @app.post('/admin/media')
 def create_media(d:Media,u=Depends(admin)):
  if not d.image_data.startswith('data:image/'):raise HTTPException(400,'Photo must be an image data URL')
- x=db();c=x.execute('INSERT INTO site_media(slot,image_data,caption,active,created_at) VALUES(?,?,?,?,?)',(d.slot,d.image_data,d.caption,1 if d.active else 0,now().isoformat()));x.commit();x.close();return {'message':'Photo uploaded','media_id':c.lastrowid}
+ x=db();x.execute('UPDATE site_media SET active=0 WHERE slot=?',(d.slot,));c=x.execute('INSERT INTO site_media(slot,image_data,caption,active,created_at) VALUES(?,?,?,?,?)',(d.slot,d.image_data,d.caption,1 if d.active else 0,now().isoformat()));x.commit();x.close();return {'message':'Photo uploaded','media_id':c.lastrowid}
 @app.patch('/admin/media/{mid}')
 def update_media(mid:int,d:Media,u=Depends(admin)):
- x=db();r=x.execute('UPDATE site_media SET slot=?,image_data=?,caption=?,active=? WHERE id=?',(d.slot,d.image_data,d.caption,1 if d.active else 0,mid));x.commit();x.close();
+ if not d.image_data.startswith('data:image/'):raise HTTPException(400,'Photo must be an image data URL')
+ x=db();x.execute('UPDATE site_media SET active=0 WHERE slot=? AND id!=?',(d.slot,mid));r=x.execute('UPDATE site_media SET slot=?,image_data=?,caption=?,active=? WHERE id=?',(d.slot,d.image_data,d.caption,1 if d.active else 0,mid));x.commit();x.close();
  if not r.rowcount:raise HTTPException(404,'Photo not found')
  return {'message':'Photo updated'}
 @app.delete('/admin/media/{mid}')
 def delete_media(mid:int,u=Depends(admin)):
  x=db();r=x.execute('DELETE FROM site_media WHERE id=?',(mid,));x.commit();x.close();
- if not r.rowcount:raise HTTPException(404,'Photo not found')
+ if not r.rowcount:raise HTTPException(404,'Photo deleted')
  return {'message':'Photo deleted'}
